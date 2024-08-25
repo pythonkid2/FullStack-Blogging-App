@@ -385,6 +385,140 @@ For Docker: withDockerRegistry: Sets up Docker registry endpoint
 For K8: withKubeConfig: Configure Kubernetes CLI (kubectl)
 ![image](https://github.com/user-attachments/assets/639c8c50-cdf2-4de9-9bc2-cb6ae694d7af)
 
+```
+pipeline {
+    agent any
+    tools {
+        maven 'M3'
+    }
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+    stages {
+        stage('Git Checkout') {
+            steps {
+                echo 'Git Checkout'
+                git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/pythonkid2/FullStack-Blogging-App.git'
+            }
+        }
+        stage('Compile') {
+            steps {
+                sh 'mvn compile'
+            }
+        }
+        stage('Unit Testing') {
+            steps {
+                echo 'Running Unit Tests'
+                sh 'mvn test'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner \
+                    -Dsonar.projectKey=Blogging-app \
+                    -Dsonar.projectName=Blogging-app \
+                    -Dsonar.java.binaries=target '''
+                }
+            }
+        }
+        stage('Trivy FS Scan') {
+            steps {
+                echo 'Running Trivy FS Scan'
+                sh 'trivy fs --format table -o fs-report.html .'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'mvn package'
+            }
+        }
+        stage('Publish to Nexus') {
+            steps {
+                withMaven(globalMavenSettingsConfig: 'maven-settings', jdk: '', maven: 'M3', mavenSettingsConfig: '', traceability: true) {
+                    sh 'mvn deploy'
+                }
+            }
+        }
+        stage('Build & Tag Docker Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh 'docker build -t mjcmathew/blogging-app:latest .'
+                    }
+                }
+            }
+        }
+        stage('Scan Docker Image with Trivy') {
+            steps {
+                echo 'Scanning Docker Image'
+                sh 'trivy image --format table -o image-report.html mjcmathew/blogging-app:latest'
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh 'docker push mjcmathew/blogging-app:latest'
+                    }
+                }
+            }
+        }
+        stage('K8-Deployment') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'mega_project-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://B154517178067F3EE04A5D80589BEFD1.gr7.us-east-2.eks.amazonaws.com') {
+                    sh 'kubectl apply -f deployment-service.yml'
+                sleep 20
+                 }
+            }
+        }
+       stage('Verify K8-Deployment') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'mega_project-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://B154517178067F3EE04A5D80589BEFD1.gr7.us-east-2.eks.amazonaws.com') {
+                sh 'kubectl get pods -n webapps'
+                sh 'kubectl get svc -n webapps'
+            }
+        }
+    }
+        
+    }
+        post {
+    always {
+        script {
+            def jobName = env.JOB_NAME
+            def buildNumber = env.BUILD_NUMBER
+            def pipelineStatus = currentBuild.result ?: 'UNKNOWN'
+            def bannerColor = pipelineStatus.toUpperCase() == 'SUCCESS' ? 'green' : 'red'
+
+            def body = """
+                <html>
+                <body>
+                <div style="border: 4px solid ${bannerColor}; padding: 10px;">
+                <h2>${jobName} - Build ${buildNumber}</h2>
+                <div style="background-color: ${bannerColor}; padding: 10px;">
+                <h3 style="color: white;">Pipeline Status: ${pipelineStatus.toUpperCase()}</h3>
+                </div>
+                <p>Check the <a href="${BUILD_URL}">console output</a>.</p>
+                </div>
+                </body>
+                </html>
+            """
+
+            emailext (
+                subject: "${jobName} - Build ${buildNumber} - ${pipelineStatus.toUpperCase()}",
+                body: body,
+                to: 'mjcmathew@gmail.com',
+                from: 'jenkins@example.com',
+                replyTo: 'jenkins@example.com',
+                mimeType: 'text/html',
+                attachmentsPattern: 'trivy-image-report.html'
+            )
+        }
+    }
+}
+}
+```
 Success Pipeline 
 ![image](https://github.com/user-attachments/assets/8133a76d-e96a-451f-8079-f7d540046ad0)
 ![image](https://github.com/user-attachments/assets/dfdd42e4-c69c-4d2c-b7b7-178ff4bacbd2)
