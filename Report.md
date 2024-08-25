@@ -578,4 +578,5 @@ Got it! I'll make sure not to remove any of the images provided. Here's the orga
    - Your **Grafana dashboard** will now be available, showing Prometheus metrics.
 
    ![image](https://github.com/user-attachments/assets/10985106-c96a-4dd7-9b16-31d05a3f8433)
+![image](https://github.com/user-attachments/assets/578b5a4f-3dd2-42bf-9c67-792b7ed55933)
 
